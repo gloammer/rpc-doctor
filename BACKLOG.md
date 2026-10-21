@@ -10,6 +10,7 @@ Choose one item at a time. Sizes estimate focused implementation time after beco
 - [x] Ethereum receipt and Solana signature-status diagnostics.
 - [x] Timeouts, structured errors, exact quantities, text/JSON reports and local mock tests.
 - [x] Formatting, Clippy and test workflow for GitHub Actions (runs after pushing).
+- [x] Practical transaction guidance for missing results, execution failures, confirmation levels and lookup errors, without inferring payment completion.
 
 ## Next sessions
 

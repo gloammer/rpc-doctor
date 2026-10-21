@@ -92,6 +92,10 @@ rpc-doctor --chain solana transaction "$SOLANA_SIGNATURE" --rpc-url "$SOLANA_RPC
 - No result does not establish whether a transaction is pending, unknown, dropped, on another network, or outside the provider's retained history.
 - Ethereum receipt inclusion alone does not establish finality. No receipt/status is independently verified against consensus.
 
+Human transaction reports suggest a next debugging step based on the actual result. Successful Ethereum execution points to application polling/subscriptions and confirmation policy if a UI remains pending. Reverted or failed execution points to failure investigation. A processed Solana signature asks you to wait for the required confirmation level; a finalized observation points to status updates and reconciliation, without claiming that payment amount, recipient or business rules were checked.
+
+`PASS Transaction lookup` means the RPC method returned a valid observation, including a reverted transaction or no result. It does not mean execution succeeded or that a payment is complete. Failed lookups offer advice for authentication, rate limits, unsupported methods and transport/protocol errors without guessing transaction status. The additional guidance is human-readable; JSON keeps its existing structured observations.
+
 ### JSON and timeouts
 
 ```sh

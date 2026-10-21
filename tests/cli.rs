@@ -118,20 +118,33 @@ fn sol_check(hash: &str, slot: u64) -> Vec<Reply> {
 }
 
 fn eth_transaction(receipt: Value) -> (Output, Value) {
-    let fixture = Fixture::new(vec![
-        Reply::result("eth_chainId", json!([]), json!("0x1")),
-        Reply::result("eth_getTransactionReceipt", json!([TX]), receipt),
-    ]);
-    let output = cli()
-        .args(["--json", "transaction", TX, "--rpc-url", &fixture.url])
-        .output()
-        .unwrap();
-    fixture.finish();
+    let output = eth_transaction_output(receipt, true);
     let report = json_output(&output);
     (output, report)
 }
 
+fn eth_transaction_output(receipt: Value, json: bool) -> Output {
+    let fixture = Fixture::new(vec![
+        Reply::result("eth_chainId", json!([]), json!("0x1")),
+        Reply::result("eth_getTransactionReceipt", json!([TX]), receipt),
+    ]);
+    let mut command = cli();
+    command.args(["transaction", TX, "--rpc-url", &fixture.url]);
+    if json {
+        command.arg("--json");
+    }
+    let output = command.output().unwrap();
+    fixture.finish();
+    output
+}
+
 fn sol_transaction(status: Value) -> (Output, Value) {
+    let output = sol_transaction_output(status, true);
+    let report = json_output(&output);
+    (output, report)
+}
+
+fn sol_transaction_output(status: Value, json: bool) -> Output {
     let signature = signature();
     let fixture = Fixture::new(vec![
         Reply::result("getGenesisHash", json!([]), json!(genesis(1))),
@@ -141,21 +154,21 @@ fn sol_transaction(status: Value) -> (Output, Value) {
             json!({"context":{"slot":123},"value":[status]}),
         ),
     ]);
-    let output = cli()
-        .args([
-            "--chain",
-            "solana",
-            "--json",
-            "transaction",
-            &signature,
-            "--rpc-url",
-            &fixture.url,
-        ])
-        .output()
-        .unwrap();
+    let mut command = cli();
+    command.args([
+        "--chain",
+        "solana",
+        "transaction",
+        &signature,
+        "--rpc-url",
+        &fixture.url,
+    ]);
+    if json {
+        command.arg("--json");
+    }
+    let output = command.output().unwrap();
     fixture.finish();
-    let report = json_output(&output);
-    (output, report)
+    output
 }
 
 #[test]
@@ -607,4 +620,132 @@ fn comparison_explains_direction_without_reusing_single_endpoint_freshness_text(
         assert!(!text.contains("Freshness has not been checked against another provider."));
         assert!(text.contains("do not prove lag"));
     }
+}
+
+#[test]
+fn ethereum_guidance_matches_execution_without_claiming_payment_completion() {
+    for (status, hint) in [
+        (Some("0x1"), "check its receipt polling/subscription"),
+        (Some("0x0"), "Investigate the transaction's failure reason"),
+        (None, "do not infer success from inclusion alone"),
+    ] {
+        let mut receipt = json!({"transactionHash":TX,"blockHash":BLOCK,"blockNumber":"0x20"});
+        match status {
+            Some(status) => receipt["status"] = json!(status),
+            None => receipt["root"] = json!(BLOCK),
+        }
+        let output = eth_transaction_output(receipt, false);
+        assert!(output.status.success());
+        let text = String::from_utf8_lossy(&output.stdout);
+        assert!(text.contains("PASS Transaction lookup:"));
+        assert!(text.contains("PASS describes the request, not transaction execution."));
+        assert!(text.contains(hint));
+    }
+}
+
+#[test]
+fn missing_transaction_guidance_does_not_infer_pending_or_failure() {
+    let output = eth_transaction_output(Value::Null, false);
+    assert!(output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stdout)
+            .contains("Verify the network and transaction hash.")
+    );
+    let output = sol_transaction_output(Value::Null, false);
+    assert!(output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stdout)
+            .contains("check another provider with the required history")
+    );
+}
+
+#[test]
+fn solana_guidance_respects_confirmation_level_and_failed_execution() {
+    for (confirmation, error, hint) in [
+        (
+            json!("processed"),
+            Value::Null,
+            "Wait for the confirmation level required",
+        ),
+        (
+            json!("confirmed"),
+            Value::Null,
+            "whether your application requires finalized confirmation",
+        ),
+        (
+            json!("finalized"),
+            Value::Null,
+            "does not verify the recipient, amount or your business rules",
+        ),
+        (
+            Value::Null,
+            Value::Null,
+            "confirmation status is unavailable",
+        ),
+        (
+            json!("finalized"),
+            json!({"InstructionError":[0,"InvalidArgument"]}),
+            "Inspect the transaction error",
+        ),
+    ] {
+        let output = sol_transaction_output(
+            json!({"slot":100,"err":error,"confirmationStatus":confirmation}),
+            false,
+        );
+        assert!(output.status.success());
+        assert!(String::from_utf8_lossy(&output.stdout).contains(hint));
+    }
+}
+
+#[test]
+fn transaction_lookup_errors_give_recovery_advice_without_status_claims() {
+    for (status, code, hint) in [
+        (401, -32000, "Check your provider credentials"),
+        (429, -32000, "Reduce request frequency"),
+        (
+            200,
+            -32601,
+            "whether this provider supports the requested transaction method",
+        ),
+    ] {
+        let mut reply = Reply::result("eth_getTransactionReceipt", json!([TX]), Value::Null);
+        reply.status = status;
+        reply.body = json!({"jsonrpc":"2.0","id":1,"error":{"code":code,"message":"secret-key"}})
+            .to_string();
+        let fixture = Fixture::new(vec![
+            Reply::result("eth_chainId", json!([]), json!("0x1")),
+            reply,
+        ]);
+        let output = cli()
+            .args(["transaction", TX, "--rpc-url", &fixture.url])
+            .output()
+            .unwrap();
+        fixture.finish();
+        assert!(!output.status.success());
+        let text = String::from_utf8_lossy(&output.stdout);
+        assert!(text.contains("The lookup failed; transaction status is unknown."));
+        assert!(text.contains(hint));
+        assert!(!text.contains("secret-key"));
+    }
+}
+
+#[test]
+fn unverified_network_is_explicit_even_if_transaction_lookup_succeeds() {
+    let mut identity = Reply::result("eth_chainId", json!([]), json!("0x1"));
+    identity.status = 503;
+    let receipt =
+        json!({"transactionHash":TX,"blockHash":BLOCK,"blockNumber":"0x20","status":"0x1"});
+    let fixture = Fixture::new(vec![
+        identity,
+        Reply::result("eth_getTransactionReceipt", json!([TX]), receipt),
+    ]);
+    let output = cli()
+        .args(["transaction", TX, "--rpc-url", &fixture.url])
+        .output()
+        .unwrap();
+    fixture.finish();
+    assert!(!output.status.success());
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert!(text.contains("Network identity could not be verified."));
+    assert!(text.contains("PASS Transaction lookup:"));
 }
