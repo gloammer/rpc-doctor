@@ -24,11 +24,47 @@ pub enum Network {
     Solana { genesis_hash: String },
 }
 
+impl Network {
+    /// Recognise returned identifiers, never provider hostnames. Unlisted IDs
+    /// remain valid networks and keep their raw identity in the display.
+    pub fn name(&self) -> Option<&'static str> {
+        match self {
+            Self::Ethereum { chain_id } => {
+                // https://ethereum.org/en/developers/docs/networks/
+                [
+                    (1, "Ethereum Mainnet"),
+                    (11_155_111, "Ethereum Sepolia"),
+                    (560_048, "Ethereum Hoodi"),
+                ]
+                .into_iter()
+                .find_map(|(id, name)| (*chain_id == Quantity::from(id)).then_some(name))
+            }
+            Self::Solana { genesis_hash } => match genesis_hash.as_str() {
+                // Known cluster identities from Solana's genesis configuration:
+                // https://github.com/solana-labs/solana/blob/master/sdk/src/genesis_config.rs
+                "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d" => Some("Solana Mainnet Beta"),
+                "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG" => Some("Solana Devnet"),
+                "4uhcVJyU9pJkvQyS88uRDiswHXSCkY3zQawwpjk2NsNY" => Some("Solana Testnet"),
+                _ => None,
+            },
+        }
+    }
+}
+
 impl fmt::Display for Network {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Ethereum { chain_id } => write!(f, "Ethereum chain ID {chain_id}"),
-            Self::Solana { genesis_hash } => write!(f, "Solana genesis hash {genesis_hash}"),
+            Self::Ethereum { chain_id } => match self.name() {
+                Some(name) => write!(f, "{name} (chain ID {chain_id})"),
+                None => write!(f, "EVM network (chain ID {chain_id}; name unknown)"),
+            },
+            Self::Solana { genesis_hash } => match self.name() {
+                Some(name) => write!(f, "{name}"),
+                None => write!(
+                    f,
+                    "Solana cluster (genesis hash {genesis_hash}; name unknown)"
+                ),
+            },
         }
     }
 }
@@ -249,5 +285,64 @@ impl fmt::Display for SolanaStatus {
                 }
             ),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn known_network_names_are_derived_from_identity() {
+        for (id, name) in [
+            (1, "Ethereum Mainnet"),
+            (11_155_111, "Ethereum Sepolia"),
+            (560_048, "Ethereum Hoodi"),
+        ] {
+            let network = Network::Ethereum {
+                chain_id: Quantity::from(id),
+            };
+            assert_eq!(network.name(), Some(name));
+            assert!(network.to_string().contains(&format!("chain ID {id}")));
+        }
+        for (hash, name) in [
+            (
+                "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d",
+                "Solana Mainnet Beta",
+            ),
+            (
+                "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+                "Solana Devnet",
+            ),
+            (
+                "4uhcVJyU9pJkvQyS88uRDiswHXSCkY3zQawwpjk2NsNY",
+                "Solana Testnet",
+            ),
+        ] {
+            let network = Chain::Solana.expected_network(hash).unwrap();
+            assert_eq!(network.name(), Some(name));
+            assert_eq!(network.to_string(), name);
+            assert_eq!(
+                serde_json::to_value(&network).unwrap()["genesis_hash"],
+                hash
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_networks_keep_identifiers_without_guessing_names() {
+        let network = Network::Ethereum {
+            chain_id: Quantity::from(31337),
+        };
+        assert!(network.name().is_none());
+        assert_eq!(
+            network.to_string(),
+            "EVM network (chain ID 31337; name unknown)"
+        );
+        let hash = bs58::encode([7_u8; 32]).into_string();
+        let network = Chain::Solana.expected_network(&hash).unwrap();
+        assert!(network.name().is_none());
+        assert!(network.to_string().contains(&hash));
+        assert!(network.to_string().contains("name unknown"));
     }
 }

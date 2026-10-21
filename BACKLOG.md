@@ -27,7 +27,7 @@ Choose one item at a time. Sizes estimate focused implementation time after beco
 - [ ] M — Add configurable repeated samples. Define sample count, spacing, time budget, partial failures and rate-limit handling first.
 - [ ] M — Add latency summaries for repeated samples and document exactly what is timed. Do not equate speed with correctness.
 - [ ] M — Add an optional block-hash comparison at a common Ethereum height, with explicit reorg limitations.
-- [ ] M — Add a network identity label for known Solana clusters while retaining the authoritative genesis hash; verify mappings in official sources.
+- [x] M — Add network identity labels for known Ethereum networks and Solana clusters, retaining raw identities in JSON and verifying mappings in primary sources.
 - [ ] M — Add Windows/macOS CI only after checking local-server test portability and HTTPS certificate behaviour.
 - [ ] M — Add a release workflow producing installable binaries once platform checks pass and a license is selected.
 

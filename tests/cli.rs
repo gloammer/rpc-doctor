@@ -514,9 +514,22 @@ fn human_reports_and_command_help_are_usable() {
     fixture.finish();
     assert!(output.status.success());
     let text = String::from_utf8(output.stdout).unwrap();
-    assert!(text.contains("Solana genesis hash"));
+    assert!(text.contains("Solana cluster (genesis hash"));
     assert!(text.contains("confirmed_slot: 123"));
     let output = cli().args(["--help"]).output().unwrap();
     assert!(output.status.success());
     assert!(String::from_utf8_lossy(&output.stdout).contains("solana"));
+}
+
+#[test]
+fn devnet_is_named_from_the_returned_hash_even_on_a_local_endpoint() {
+    let hash = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG";
+    let fixture = Fixture::new(sol_check(hash, 123));
+    let output = cli()
+        .args(["--chain", "solana", "check", "--rpc-url", &fixture.url])
+        .output()
+        .unwrap();
+    fixture.finish();
+    assert!(output.status.success());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Network: Solana Devnet"));
 }

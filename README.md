@@ -20,6 +20,10 @@ cargo run -- check --rpc-url "$RPC_URL" --expected-network 1
 
 The default protocol is `ethereum`. An EVM-compatible chain uses the same protocol; its chain ID distinguishes the network. Solana uses its genesis hash as the network identifier. Public endpoints may enforce rate limits.
 
+Human reports recognise Ethereum Mainnet, Sepolia and Hoodi, plus Solana Mainnet Beta, Devnet and Testnet. Names come from returned chain IDs or known genesis hashes, not endpoint hostnames. Unknown identities remain usable and display their raw identifier with `name unknown`. JSON always retains the raw chain ID or genesis hash. A familiar name is not independent verification of a provider's claims.
+
+The Solana mappings follow the [Solana genesis configuration](https://github.com/solana-labs/solana/blob/master/sdk/src/genesis_config.rs); Ethereum names follow the [Ethereum network documentation](https://ethereum.org/en/developers/docs/networks/). A reset or new network identity needs an explicit mapping update.
+
 Install the binary locally:
 
 ```sh
