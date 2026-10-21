@@ -45,6 +45,20 @@ rpc-doctor --chain solana check --rpc-url "$SOLANA_RPC_URL" \
 
 Checks network identity and height independently, so a failed method does not hide a working method. `--expected-network` accepts a decimal Ethereum chain ID or a base58 Solana genesis hash.
 
+Human output explains which requests passed and what remains unknown. For example (illustrative measurements):
+
+```text
+Endpoint: https://api.devnet.solana.com (path/query/credentials omitted)
+PASS Network identity: Solana Devnet — 234 ms
+PASS Latest confirmed slot: 513469360 — 82 ms
+
+Both RPC requests succeeded.
+Freshness has not been checked against another provider.
+A successful request does not establish consistent provider reliability.
+```
+
+`PASS` refers to a particular request or identity comparison. It is not a provider-health score. A successful pair of requests can still report an expected-network mismatch. JSON field names such as `confirmed_slot` remain stable even though the human labels use plain language.
+
 | Protocol | Network identity | Height |
 |---|---|---|
 | Ethereum / EVM | `eth_chainId` | `eth_blockNumber`: latest block |
@@ -61,6 +75,8 @@ rpc-doctor --chain solana compare \
 The selected protocol applies to both endpoints. Heights are compared only when both network identities match. Reports retain both endpoint results if one fails.
 
 Sampling is sequential. A height difference is an observation, not proof of a faulty or lagging provider. Slots and blocks are different measurements. The tool does not compare Ethereum heights with Solana slots.
+
+Human comparisons identify which endpoint returned the lower height and suggest repeating the check. They do not reuse a single-endpoint freshness message or claim that either provider is independently verified.
 
 ### Inspect a transaction
 

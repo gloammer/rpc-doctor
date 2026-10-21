@@ -3,7 +3,7 @@ use std::fmt;
 use serde::Serialize;
 
 use crate::{
-    chain::{Chain, Network, TransactionId, TransactionStatus},
+    chain::{Chain, HeightKind, Network, TransactionId, TransactionStatus},
     rpc::{Execution, Probe, Receipt, RpcClient},
     types::{Endpoint, Quantity},
 };
@@ -13,7 +13,7 @@ pub struct Check {
     endpoint: String,
     network: Probe<Network>,
     height: Probe<Quantity>,
-    height_kind: &'static str,
+    height_kind: HeightKind,
     expected_network: Option<Network>,
     chain_matches: Option<bool>,
 }
@@ -45,6 +45,40 @@ impl Check {
         self.network.value().is_some()
             && self.height.value().is_some()
             && self.chain_matches != Some(false)
+    }
+
+    fn details(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(
+            f,
+            "Endpoint: {} (path/query/credentials omitted)",
+            self.endpoint
+        )?;
+        probe_text(f, "Network identity", &self.network)?;
+        probe_text(f, self.height_kind.label(), &self.height)?;
+        if let Some(expected) = &self.expected_network {
+            match self.chain_matches {
+                Some(true) => writeln!(f, "PASS Expected network: {expected}; matches")?,
+                Some(false) => writeln!(
+                    f,
+                    "FAIL Expected network: {expected}; MISMATCH. Check your RPC configuration."
+                )?,
+                None => writeln!(f, "UNKNOWN Expected network: {expected}; could not verify")?,
+            }
+        }
+        Ok(())
+    }
+
+    fn request_summary(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let passed = usize::from(self.network.value().is_some())
+            + usize::from(self.height.value().is_some());
+        if passed == 2 {
+            writeln!(f, "Both RPC requests succeeded.")
+        } else {
+            writeln!(
+                f,
+                "{passed} of 2 RPC requests succeeded. Review the failed requests above."
+            )
+        }
     }
 }
 
@@ -118,45 +152,72 @@ fn probe_text<T: fmt::Display>(
     probe: &Probe<T>,
 ) -> fmt::Result {
     match probe {
-        Probe::Ok { value, duration_ms } => writeln!(f, "  {label}: {value} ({duration_ms} ms)"),
+        Probe::Ok { value, duration_ms } => writeln!(f, "PASS {label}: {value} — {duration_ms} ms"),
         Probe::Error { error, duration_ms } => {
-            writeln!(f, "  {label}: ERROR — {error} ({duration_ms} ms)")
+            writeln!(f, "FAIL {label}: {error} — {duration_ms} ms")
         }
     }
 }
 
 impl fmt::Display for Check {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.details(f)?;
+        writeln!(f)?;
+        self.request_summary(f)?;
         writeln!(
             f,
-            "Endpoint: {} (path/query/credentials omitted)",
-            self.endpoint
+            "Freshness has not been checked against another provider."
         )?;
-        probe_text(f, "Network", &self.network)?;
-        probe_text(f, self.height_kind, &self.height)?;
-        if let Some(expected) = &self.expected_network {
-            writeln!(
-                f,
-                "  Expected network: {expected}; {}",
-                match self.chain_matches {
-                    Some(true) => "matches",
-                    Some(false) => "MISMATCH",
-                    None => "could not verify",
-                }
-            )?;
-        }
+        writeln!(
+            f,
+            "A successful request does not establish consistent provider reliability."
+        )?;
         Ok(())
     }
 }
 
 impl fmt::Display for Comparison {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "First\n{}\nSecond\n{}", self.first, self.second)?;
+        writeln!(f, "First endpoint")?;
+        self.first.details(f)?;
+        writeln!(f, "\nSecond endpoint")?;
+        self.second.details(f)?;
+        writeln!(f)?;
         match self.same_network {
-            Some(false) => writeln!(f, "Network mismatch: heights are not compared.")?,
+            Some(false) => writeln!(
+                f,
+                "FAIL Network mismatch: heights are not compared. Check your RPC configuration."
+            )?,
             Some(true) => {
+                writeln!(f, "PASS Both endpoints report the same network identity.")?;
                 if let Some(difference) = self.height_difference {
-                    writeln!(f, "Absolute height difference: {difference}")?;
+                    writeln!(
+                        f,
+                        "Absolute height difference: {difference} {}.",
+                        self.first.height_kind.unit()
+                    )?;
+                    if difference == Quantity::from(0) {
+                        writeln!(
+                            f,
+                            "Both endpoints returned the same height in these samples."
+                        )?;
+                    } else {
+                        let (lower, higher) =
+                            if self.first.height.value() < self.second.height.value() {
+                                ("First", "second")
+                            } else {
+                                ("Second", "first")
+                            };
+                        writeln!(
+                            f,
+                            "{lower} endpoint returned a lower height than the {higher}. Repeat the comparison to see whether this persists."
+                        )?;
+                    }
+                } else {
+                    writeln!(
+                        f,
+                        "Height comparison is unavailable because a height request failed."
+                    )?;
                 }
             }
             None => writeln!(
@@ -164,7 +225,11 @@ impl fmt::Display for Comparison {
                 "Could not verify that both endpoints use the same network."
             )?,
         }
-        writeln!(f, "{}", self.note)
+        writeln!(f, "{}", self.note)?;
+        writeln!(
+            f,
+            "Freshness relative to the network has not been independently verified."
+        )
     }
 }
 

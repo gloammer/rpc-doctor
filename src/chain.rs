@@ -17,6 +17,29 @@ pub enum Chain {
     Solana,
 }
 
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HeightKind {
+    LatestBlock,
+    ConfirmedSlot,
+}
+
+impl HeightKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::LatestBlock => "Latest block",
+            Self::ConfirmedSlot => "Latest confirmed slot",
+        }
+    }
+
+    pub fn unit(self) -> &'static str {
+        match self {
+            Self::LatestBlock => "blocks",
+            Self::ConfirmedSlot => "confirmed slots",
+        }
+    }
+}
+
 #[derive(PartialEq, Eq, Serialize)]
 #[serde(tag = "chain", rename_all = "snake_case")]
 pub enum Network {
@@ -144,10 +167,10 @@ impl Chain {
         }
     }
 
-    pub fn height_kind(self) -> &'static str {
+    pub fn height_kind(self) -> HeightKind {
         match self {
-            Self::Ethereum => "latest_block",
-            Self::Solana => "confirmed_slot",
+            Self::Ethereum => HeightKind::LatestBlock,
+            Self::Solana => HeightKind::ConfirmedSlot,
         }
     }
 }

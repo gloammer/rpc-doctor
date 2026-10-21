@@ -15,7 +15,7 @@ Choose one item at a time. Sizes estimate focused implementation time after beco
 
 - [ ] S — Run the tool with a provider you use. Record one useful finding and one confusing part of the output, with credentials removed.
 - [ ] S — Follow the README in a fresh checkout. Fix one verified setup problem, or record that it worked without manufacturing a change.
-- [ ] S — Improve human-readable height labels while keeping machine-readable JSON stable. Verify both chains' output.
+- [x] S — Improve human-readable height labels and pass/fail summaries while keeping machine-readable JSON stable. Verify both chains' output.
 - [ ] S — Show the full Ethereum receipt's block hash in the human transaction report; it already exists in JSON.
 - [ ] S — Add an explanatory hint for HTTP 401/403 versus 429 without printing a provider response body.
 - [ ] S — Explain JSON-RPC method-not-found (`-32601`) in human output; retain the numeric error in JSON.

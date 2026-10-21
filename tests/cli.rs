@@ -515,7 +515,9 @@ fn human_reports_and_command_help_are_usable() {
     assert!(output.status.success());
     let text = String::from_utf8(output.stdout).unwrap();
     assert!(text.contains("Solana cluster (genesis hash"));
-    assert!(text.contains("confirmed_slot: 123"));
+    assert!(text.contains("PASS Latest confirmed slot: 123"));
+    assert!(text.contains("Both RPC requests succeeded."));
+    assert!(text.contains("Freshness has not been checked against another provider."));
     let output = cli().args(["--help"]).output().unwrap();
     assert!(output.status.success());
     assert!(String::from_utf8_lossy(&output.stdout).contains("solana"));
@@ -531,5 +533,78 @@ fn devnet_is_named_from_the_returned_hash_even_on_a_local_endpoint() {
         .unwrap();
     fixture.finish();
     assert!(output.status.success());
-    assert!(String::from_utf8_lossy(&output.stdout).contains("Network: Solana Devnet"));
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("PASS Network identity: Solana Devnet")
+    );
+}
+
+#[test]
+fn partial_checks_explain_failed_requests_without_claiming_success() {
+    let mut replies = eth_check("0x1", "0x10");
+    replies[0].status = 429;
+    let fixture = Fixture::new(replies);
+    let output = cli()
+        .args(["check", "--rpc-url", &fixture.url])
+        .output()
+        .unwrap();
+    fixture.finish();
+    assert!(!output.status.success());
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert!(text.contains("FAIL Network identity: HTTP 429"));
+    assert!(text.contains("PASS Latest block: 16"));
+    assert!(text.contains("1 of 2 RPC requests succeeded."));
+    assert!(!text.contains("Both RPC requests succeeded."));
+}
+
+#[test]
+fn expected_network_mismatch_is_visible_even_when_requests_succeed() {
+    let fixture = Fixture::new(eth_check("0x1", "0x10"));
+    let output = cli()
+        .args([
+            "check",
+            "--rpc-url",
+            &fixture.url,
+            "--expected-network",
+            "11155111",
+        ])
+        .output()
+        .unwrap();
+    fixture.finish();
+    assert!(!output.status.success());
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert!(text.contains("Both RPC requests succeeded."));
+    assert!(text.contains("FAIL Expected network: Ethereum Sepolia"));
+    assert!(text.contains("MISMATCH. Check your RPC configuration."));
+}
+
+#[test]
+fn comparison_explains_direction_without_reusing_single_endpoint_freshness_text() {
+    for (first_height, second_height, observation) in [
+        (100, 102, "First endpoint returned a lower height"),
+        (102, 100, "Second endpoint returned a lower height"),
+        (100, 100, "Both endpoints returned the same height"),
+    ] {
+        let first = Fixture::new(sol_check(&genesis(1), first_height));
+        let second = Fixture::new(sol_check(&genesis(1), second_height));
+        let output = cli()
+            .args([
+                "--chain",
+                "solana",
+                "compare",
+                "--rpc-url",
+                &first.url,
+                "--other-url",
+                &second.url,
+            ])
+            .output()
+            .unwrap();
+        first.finish();
+        second.finish();
+        assert!(output.status.success());
+        let text = String::from_utf8_lossy(&output.stdout);
+        assert!(text.contains(observation));
+        assert!(text.contains("confirmed slots"));
+        assert!(!text.contains("Freshness has not been checked against another provider."));
+        assert!(text.contains("do not prove lag"));
+    }
 }
